@@ -1,0 +1,27 @@
+#!/bin/bash
+
+read_all_cisco_acls() {
+    # Define the SSH connection details
+    SSH_USER="your_username"
+    SSH_HOST="your_cisco_switch_ip"
+    SSH_KEY="path_to_your_ssh_key"
+
+    # SSH into the Cisco switch and read the running configuration
+    config=$(ssh -i "$SSH_KEY" "$SSH_USER"@"$SSH_HOST" "show running-config")
+
+    # Extract the ACL names or numbers from the configuration
+    acl_names=$(echo "$config" | grep -oE "access-list [[:alnum:]_]+")
+
+    # Loop through each ACL and read its configuration
+    for acl_name in $acl_names; do
+        acl_config=$(ssh -i "$SSH_KEY" "$SSH_USER"@"$SSH_HOST" "show access-list $acl_name")
+        echo "ACL Name: $acl_name"
+        echo "ACL Configuration:"
+        echo "$acl_config"
+        echo "----------------------"
+    done
+}
+
+
+# Call the function to read all ACLs
+read_all_cisco_acls

@@ -1,0 +1,142 @@
+#!/usr/bin/env bash
+
+function convert_human_time_to_timestamp() {
+  # Check if one argument is provided
+  if [[ $# -ne 1 ]]; then
+    return 1
+  fi
+
+  # Initialize variables with default values (zero)
+  hours=0
+  minutes=0
+  seconds=0
+  milliseconds=0
+
+  # Regex pattern for capturing time components
+  pattern='^(([0-9]+)(h))?(([0-9]+)(m))?(([0-9]+)(s))?(([0-9]+)(ms))?$'
+
+  # Use [[ ]] for string comparison and capture groups
+  if [[ $1 =~ $pattern ]]; then
+    matchid_h=-1
+    matchid_m=-1
+    matchid_s=-1
+    matchid_ms=-1
+    # Get IDs of captured values:
+    for i in "${!BASH_REMATCH[@]}"; do
+      case ${BASH_REMATCH[$i]} in
+      "h") matchid_h=$(($i-1));;
+      "m") matchid_m=$(($i-1));;
+      "s") matchid_s=$(($i-1));;
+      "ms") matchid_ms=$(($i-1));;
+      esac
+    done
+    [[ $matchid_h -eq -1 ]]   && hours=0        || hours=${BASH_REMATCH[$matchid_h]}
+    [[ $matchid_m -eq -1 ]]   && minutes=0      || minutes=${BASH_REMATCH[$matchid_m]}
+    [[ $matchid_s -eq -1 ]]   && seconds=0      || seconds=${BASH_REMATCH[$matchid_s]}
+    [[ $matchid_ms -eq -1 ]]  && milliseconds=0 || milliseconds=${BASH_REMATCH[$matchid_ms]}
+  else
+    return 1
+  fi
+
+  # Format the output with leading zeros and colons
+  printf "%02d:%02d:%02d.%03d\n" "$hours" "$minutes" "$seconds" "$milliseconds"
+}
+
+
+# Function to download YouTube video as MP3 with options
+function download_yt_to_mpa() {
+  yturl="$1"
+  date=
+  # URL validation using regex (replace with your preferred method if needed)
+  if [[ ! "$yturl" =~ ^https://www.youtube.com/watch\?v= ]]; then
+    echo "Error: Invalid YouTube URL format."
+    return 1
+  fi
+
+  # Get upload date using yt-dlp:
+  echo "Checking upload date..."
+  upload_date=$(yt-dlp --skip-download --print upload_date --no-warnings "${yturl}") || { 
+    echo "Error: Failed to get upload date."
+    return 1
+  }
+  # Convert the upload date format from YYYYMMDD to YYYY.MM.DD
+  upload_date=$(gdate -d "$upload_date" +"%Y.%m.%d")
+  if [[ $? -ne 0 ]]; then
+    echo "Error: Failed to convert upload date format."
+    return 1
+  fi
+
+  # Get video title using yt-dlp (ensure yt-dlp is installed):
+  echo "Checking video title..."
+  title=$(yt-dlp --skip-download --get-title --no-warnings "${yturl}") || { 
+    echo "Error: Failed to get video title."
+    return 1
+  }
+  fulltitle="${upload_date}.${title}.mp3"
+  echo "Title of the video: $fulltitle"
+
+  # Check for optional start time argument
+  if [[ $# -eq 2 ]]; then
+    start_time="$2"
+    echo "Requested custom start time: $start_time"
+  else
+    start_time="00:00:00.00"
+    echo "Default start time: $start_time"
+  fi
+
+  # Download with desired options: audio format, start time, output file name
+  yt-dlp -x --audio-format=mp3 --ppa "ffmpeg:-ss ${start_time}" -o "$fulltitle" "${yturl}" || {
+    echo "Error: yt-dlp has failed to download the video."
+    return 1
+  }
+}
+
+#
+# Usage:
+function usage_and_exit() {
+  echo "Usage: $0 [--start_time|-s <start_time>] <youtube_url>"
+  echo "       youtube_url:   The URL of the YouTube video to download"
+  echo "       start_time:    (Optional) The start time of the video in human readable format."
+  echo "                      Examples:  4s, 1m30s, 10m, 1h5m, 4s100ms"
+  exit 1
+}
+
+#
+# MAIN program part: params and globals:
+mode=
+youtube_url=
+start_time=
+function parse_opts_and_mode() {
+  mode="usage"  # default value when user did not provide the URL
+  while [[ "$#" -gt 0 ]]; do
+    case "$1" in
+      --start-time|-s)
+        echo "[debug] Found start-time='$2'" >&2
+        start_time="$2"
+        shift 2
+        ;;
+      *)
+        echo "[debug] Found positional argument='$1'" >&2
+        youtube_url="$1"  # URL must be a first positional argument
+        mode="download"
+        shift
+        ;;
+    esac
+  done
+}
+
+function main() {
+  parse_opts_and_mode "$@"
+  case "$mode" in
+    download)
+      timestamp=$(convert_human_time_to_timestamp "$start_time")
+      download_yt_to_mpa "$youtube_url" "$timestamp"
+      ;;
+    *)
+      usage_and_exit
+      ;;
+  esac
+}
+
+# Usage: script_name.sh <youtube_url> [start_time]
+main "$@"
